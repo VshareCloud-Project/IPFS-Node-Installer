@@ -1,5 +1,5 @@
 #!/bin/bash
-# v1.0.5
+# v1.0.6
 echo=echo
 for cmd in echo /bin/echo; do
     $cmd >/dev/null 2>&1 || continue
