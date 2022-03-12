@@ -46,6 +46,8 @@ elif cat /proc/version | grep -q -E -i "ubuntu"; then
     release="ubuntu"
 elif cat /proc/version | grep -q -E -i "centos|red hat|redhat"; then
     release="centos"
+elif cat /proc/version | grep -q -E -i "deepin"; then
+    release="deepin"
 else
     OUT_ERROR "[错误] 不支持的操作系统！"
     exit 1
@@ -60,13 +62,14 @@ if [ -e /tmp/ipfs_install ]; then
 fi
 mkdir /tmp/ipfs_install
 cd /tmp/ipfs_install
-if [ ! -e /usr/bin/ipfs ]; then
-wget "https://gateway.ipns.tech//ipns/ipfs-file.ipns.network/ipfs-file.tar.gz"
+if [ -e /usr/bin/ipfs ]; then
+    rm -rf /usr/bin/ipfs
+fi
+wget "https://gateway.ipns.tech/ipns/ipfs-file.ipns.network/ipfs-file.tar.gz"
 tar zxvf ipfs-file.tar.gz
 cp -f ipfs /usr/bin/
 chmod +x /usr/bin/ipfs
 rm -rf /tmp/ipfs_install
-fi
 echo "Install Done"
 
 # Set Service File
@@ -106,7 +109,7 @@ echo "Set service Done"
 
 # Set IPFS
 public_ip=`curl -s https://api-ipv4.ip.sb/ip`
-if [ ! -e /root/.ipfs ]; then
+if [ ! -e /root/.ipfs/config ]; then
 ipfs init
 fi
 systemctl stop ipfs-daemon
@@ -132,6 +135,6 @@ systemctl enable --now ipfs-daemon
 sleep 15s
 ipfs pin add /ipns/ipfs-file.ipns.network
 ipfs pin add /ipns/install-sh.ipns.network
-echo "The installation is complete, enjoy your node!"
+echo "The installation is completed, enjoy your node!"
 
 exit 0
