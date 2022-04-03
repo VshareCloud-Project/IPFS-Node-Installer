@@ -108,9 +108,9 @@ systemctl daemon-reload
 echo "Set service Done"
 
 # Set IPFS
-public_ip=`curl -s https://api-ipv4.ip.sb/ip`
+public_ip=`curl -s -4 ip.sb`
 if [ ! -e /root/.ipfs/config ]; then
-ipfs init
+    ipfs init
 fi
 systemctl stop ipfs-daemon
 #配置外部访问
