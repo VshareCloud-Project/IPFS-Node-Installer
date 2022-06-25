@@ -241,7 +241,7 @@ RestartSec=10
 [Install]
 WantedBy=multi-user.target
 EOF
-		cp ${tmpdir}/ipfs-daemon-root.service ${systemd_service_path}/ipfs-daemon.service
+		cp ${tmpdir}/ipfs-daemon-root.service ${systemd_service_path}/ipfs.service
 
 	else
 		bin_install_dir="$HOME/.local/bin/"
@@ -284,7 +284,7 @@ RestartSec=30
 [Install]
 WantedBy=multi-user.target
 EOF
-		cp ${tmpdir}/ipfs-daemon-user.service ${systemd_service_path}/ipfs-daemon.service
+		cp ${tmpdir}/ipfs-daemon-user.service ${systemd_service_path}/ipfs.service
 	fi
 fi
 
@@ -301,7 +301,7 @@ fi
 systemctl $systemd_user_arg daemon-reload
 
 # 干掉旧服务
-systemctl $systemd_user_arg stop ipfs-daemon
+systemctl $systemd_user_arg stop ipfs
 
 # 初始化 ipfs
 if [ ! -e $HOME/.ipfs/config ]; then
@@ -340,7 +340,7 @@ ipfs config --json Swarm.ConnMgr '{"GracePeriod": "30s","HighWater": 1024,"LowWa
 ipfs config --json Datastore.GCPeriod '"12h"'
 
 OUT_INFO "启动服务...\n"
-systemctl $systemd_user_arg enable --now ipfs-daemon
+systemctl $systemd_user_arg enable --now ipfs
 
 # 说真的，这个等待真的有意义吗？
 OUT_ALERT "稍等片刻"
