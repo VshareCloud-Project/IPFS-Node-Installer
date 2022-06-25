@@ -112,72 +112,108 @@ fi
 
 
 
-# Install IPFS Binary File
-
+# Install IPFS
 ## set -e: Exit immediately if a command exits with a non-zero status.
 set -e
 
-tmpdir=`mktemp --directory /tmp/ipfs_install_temp_dir_XXXXXXXX`
-OUT_INFO "generate install temp dir: "${tmpdir}"\n"
 
-cd ${tmpdir}
-
-tar_file_url="https://gateway.ipns.tech/ipns/ipfs-file.ipns.network/ipfs-file.tar.gz"
-
-tar_file_name="ipfs-file.tar.gz"
-# 防止重复下载
-if [ -f "/tmp/${tar_file_name}" ]; then
-	cp "/tmp/${tar_file_name}" ${tmpdir}
+## 尝试调用包管理器
+if [ `id -u` == 0 ];then
+	sudo=""
+else
+	sudo=sudo
+fi
+package_manager_source="not_got_yet"
+## arch
+if command -v pacman &> /dev/null
+then
+	if [ -n "$(pacman -Ss '^go-ipfs$')" ]; then
+		OUT_INFO "发现 pacman，尝试安装中\n"
+		$sudo pacman -Syu go-ipfs
+		package_manager_source="got"
+	fi
+fi
+## nix
+if command -v "nix-env" &> /dev/null
+then
+	if [ -n "$(nix-env -qa "ipfs")" ]; then
+		OUT_INFO "发现 nix，尝试安装中\n"
+		$sudo nix-env -i ipfs
+		package_manager_source="got"
+	fi
+fi
+## snap(比如 ubuntu)
+if command -v snap &> /dev/null
+then
+	if [ -n "$(snap find "ipfs")" ]; then
+		OUT_INFO "发现 snap，尝试安装中\n"
+		$sudo snap install ipfs
+		package_manager_source="got"
+	fi
 fi
 
+## 找不到包管理器，脏安装凑合吧。
+if [ $package_manager_source == "not_got_yet" ];then
+	tmpdir=`mktemp --directory /tmp/ipfs_install_temp_dir_XXXXXXXX`
+	OUT_INFO "generate install temp dir: "${tmpdir}"\n"
 
-if [ "${download_command}" == "aria2c" ]; then
-	aria2c --continue=true -d ${tmpdir} -o ${tar_file_name} ${tar_file_url}
-fi
-if [ "${download_command}" == "wget" ]; then
-	wget --continue --output-file=${tmpdir}/${tar_file_name} ${tar_file_url}
-fi
-if [ "${download_command}" == "curl" ]; then
-	curl -C - --verbose --output ${tmpdir}/${tar_file_name} ${tar_file_url}
-fi
+	cd ${tmpdir}
 
-tar -zxvf ipfs-file.tar.gz
+	tar_file_url="https://gateway.ipns.tech/ipns/ipfs-file.ipns.network/ipfs-file.tar.gz"
 
-systemd_user_arg=""
-if [ `id -u` == 0 ]; then
-	bin_install_dir="/usr/bin/"
-	cp -f ipfs ${bin_install_dir}
-	chmod 755 ${bin_install_dir}"ipfs"
-	OUT_INFO "ipfs 二进制文件已经被脏安装到 "${bin_install_dir}"ipfs。\n"
-	OUT_ALERT """选择 systemd servise 安装位置：\n"
-	OUT_INFO "	1) /etc/systemd/system (默认)
+	tar_file_name="ipfs-file.tar.gz"
+	# 防止重复下载
+	if [ -f "/tmp/${tar_file_name}" ]; then
+		cp "/tmp/${tar_file_name}" ${tmpdir}
+	fi
+
+
+	if [ "${download_command}" == "aria2c" ]; then
+		aria2c --continue=true -d ${tmpdir} -o ${tar_file_name} ${tar_file_url}
+	fi
+	if [ "${download_command}" == "wget" ]; then
+		wget --continue --output-file=${tmpdir}/${tar_file_name} ${tar_file_url}
+	fi
+	if [ "${download_command}" == "curl" ]; then
+		curl -C - --verbose --output ${tmpdir}/${tar_file_name} ${tar_file_url}
+	fi
+
+	tar -zxvf ipfs-file.tar.gz
+
+	if [ `id -u` == 0 ]; then
+		bin_install_dir="/usr/bin/"
+		cp -f ipfs ${bin_install_dir}
+		chmod 755 ${bin_install_dir}"ipfs"
+		OUT_INFO "ipfs 二进制文件已经被脏安装到 "${bin_install_dir}"ipfs。\n"
+		OUT_ALERT """选择 systemd servise 安装位置：\n"
+		OUT_INFO "	1) /etc/systemd/system (默认)
 	2) /usr/local/lib/systemd/system
 	3) /run/systemd/system (作为 Runtime units 安装，没有实际影响)
 	4) /usr/lib/systemd/system (如果你在制作一个软件包而非真正安装，请选择此项)\n"
-	systemd_service_path=""
-	read line
-	if [ -z "${line}" ]; then
-		line=1
-	fi
-	if [ "${line}" == 1 ];then
-		systemd_service_path="/etc/systemd/system"
-	fi
-	if [ "${line}" == 2 ];then
-			systemd_service_path="/usr/local/lib/systemd/system"
-	fi
-	if [ "${line}" == 3 ];then
-			systemd_service_path="/run/systemd/system"
-	fi
-	if [ "${line}" == 4 ];then
-			systemd_service_path="/usr/lib/systemd/system"
-	fi		
-	
-	if [ -z "${systemd_service_path}" ]; then
-		OUT_ERROR "未知的输入。\n"
-		return 1
-	fi
-	
-	cat >${tmpdir}/ipfs-daemon-root.service <<EOF
+		systemd_service_path=""
+		read line
+		if [ -z "${line}" ]; then
+			line=1
+		fi
+		if [ "${line}" == 1 ];then
+			systemd_service_path="/etc/systemd/system"
+		fi
+		if [ "${line}" == 2 ];then
+				systemd_service_path="/usr/local/lib/systemd/system"
+		fi
+		if [ "${line}" == 3 ];then
+				systemd_service_path="/run/systemd/system"
+		fi
+		if [ "${line}" == 4 ];then
+				systemd_service_path="/usr/lib/systemd/system"
+		fi
+
+		if [ -z "${systemd_service_path}" ]; then
+			OUT_ERROR "未知的输入。\n"
+			return 1
+		fi
+
+		cat >${tmpdir}/ipfs-daemon-root.service <<EOF
 [Unit]
 Description=IPFS daemon
 After=network.target
@@ -205,39 +241,39 @@ RestartSec=10
 [Install]
 WantedBy=multi-user.target
 EOF
-	cp ${tmpdir}/ipfs-daemon-root.service ${systemd_service_path}/ipfs-daemon.service
+		cp ${tmpdir}/ipfs-daemon-root.service ${systemd_service_path}/ipfs-daemon.service
 
-else
-	bin_install_dir="$HOME/.local/bin/"
-	if [ -d "${bin_install_dir}" ]; then
-		mkdir -p ${bin_install_dir}
-	fi
-
-	cp -f ipfs ${bin_install_dir}
-	chmod 755 ${bin_install_dir}"ipfs"
-
-	# 对于有些发行版，bashrc 检查不到 ~/.local/bin 时不会将其加入 PATH，因此为了脚本继续运行，将其临时性加入，并等待用户下一次加入
-	if ! command -v $ipfs &> /dev/null; then
-		OUT_ERROR "${bin_install_dir} 没有被加入 PATH 变量中，如果出现“ipfs：未找到命令”的提示，尝试开一个新的命令行。
-对于一些偷懒的系统(即使打开新的命令行也无济于事)，请修改 ~/.bashrc 文件，在末尾加入：
-	PATH=\$PATH:${bin_install_dir}\n"
-		PATH=$PATH:${bin_install_dir}
-	fi
-
-	
-
-	OUT_INFO "ipfs 二进制文件已经被安装到 "${bin_install_dir}"ipfs。\n"
-
-	systemd_service_path=""
-	if [ -d "${XDG_CONFIG_HOME}/.config/systemd/user" ];then
-		systemd_service_path="${XDG_CONFIG_HOME}/.config/systemd/user"
-		OUT_INFO "发现 \$XDG_CONFIG_HOME 变量，systemd user servise 将被安装到 ${systemd_service_path}。\n"
 	else
-		systemd_service_path="${HOME}/.config/systemd/user"
-		OUT_INFO "systemd user servise 将被安装到 ${systemd_service_path}。\n"
-	fi
+		bin_install_dir="$HOME/.local/bin/"
+		if [ -d "${bin_install_dir}" ]; then
+			mkdir -p ${bin_install_dir}
+		fi
 
-	cat >${tmpdir}/ipfs-daemon-user.service <<EOF
+		cp -f ipfs ${bin_install_dir}
+		chmod 755 ${bin_install_dir}"ipfs"
+
+		# 对于有些发行版，bashrc 检查不到 ~/.local/bin 时不会将其加入 PATH，因此为了脚本继续运行，将其临时性加入，并等待用户下一次加入
+		if ! command -v $ipfs &> /dev/null; then
+			OUT_ERROR "${bin_install_dir} 没有被加入 PATH 变量中，如果出现“ipfs：未找到命令”的提示，尝试开一个新的命令行。
+	对于一些偷懒的系统(即使打开新的命令行也无济于事)，请修改 ~/.bashrc 文件，在末尾加入：
+		PATH=\$PATH:${bin_install_dir}\n"
+			PATH=$PATH:${bin_install_dir}
+		fi
+
+
+
+		OUT_INFO "ipfs 二进制文件已经被安装到 "${bin_install_dir}"ipfs。\n"
+
+		systemd_service_path=""
+		if [ -d "${XDG_CONFIG_HOME}/.config/systemd/user" ];then
+			systemd_service_path="${XDG_CONFIG_HOME}/.config/systemd/user"
+			OUT_INFO "发现 \$XDG_CONFIG_HOME 变量，systemd user servise 将被安装到 ${systemd_service_path}。\n"
+		else
+			systemd_service_path="${HOME}/.config/systemd/user"
+			OUT_INFO "systemd user servise 将被安装到 ${systemd_service_path}。\n"
+		fi
+
+		cat >${tmpdir}/ipfs-daemon-user.service <<EOF
 [Unit]
 Description=IPFS daemon
 After=network.target
@@ -248,9 +284,18 @@ RestartSec=30
 [Install]
 WantedBy=multi-user.target
 EOF
-	cp ${tmpdir}/ipfs-daemon-user.service ${systemd_service_path}/ipfs-daemon.service
+		cp ${tmpdir}/ipfs-daemon-user.service ${systemd_service_path}/ipfs-daemon.service
+	fi
+fi
+
+
+
+
+systemd_user_arg=""
+if ! [ `id -u` == 0 ]; then
 	systemd_user_arg="--user"
 fi
+
 
 # 督促 systemd 阅读 service 文件
 systemctl $systemd_user_arg daemon-reload
