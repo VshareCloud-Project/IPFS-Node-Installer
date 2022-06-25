@@ -148,7 +148,7 @@ then
 	if [ -n "$(snap find "ipfs")" ]; then
 		OUT_INFO "发现 snap，尝试安装中\n"
 		$sudo snap install ipfs
-		package_manager_source="got"
+		package_manager_source="snap"
 	fi
 fi
 
@@ -297,11 +297,15 @@ if ! [ `id -u` == 0 ]; then
 fi
 
 
-# 督促 systemd 阅读 service 文件
-systemctl $systemd_user_arg daemon-reload
+# snap 有 snapd 而不是跑 systemd
+if ! [ "${package_manager_source}" == "snap"];then
+	# 督促 systemd 阅读 service 文件
+	systemctl $systemd_user_arg daemon-reload
+	
+	# 干掉旧服务
+	systemctl $systemd_user_arg stop ipfs
+fi
 
-# 干掉旧服务
-systemctl $systemd_user_arg stop ipfs
 
 # 初始化 ipfs
 if [ ! -e $HOME/.ipfs/config ]; then
@@ -339,8 +343,10 @@ ipfs config --json Peering.Peers '[{"Addrs": ["/dns4/checkpoint-hk.ipns.network/
 ipfs config --json Swarm.ConnMgr '{"GracePeriod": "30s","HighWater": 1024,"LowWater": 512,"Type": "basic"}'
 ipfs config --json Datastore.GCPeriod '"12h"'
 
-OUT_INFO "启动服务...\n"
-systemctl $systemd_user_arg enable --now ipfs
+if ! [ "${package_manager_source}" == "snap"];then
+	OUT_INFO "启动服务...\n"
+	systemctl $systemd_user_arg enable --now ipfs
+fi
 
 # 说真的，这个等待真的有意义吗？
 OUT_ALERT "稍等片刻"
