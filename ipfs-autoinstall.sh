@@ -1,37 +1,34 @@
 #!/bin/bash
-# v1.0.6
-echo=echo
-for cmd in echo /bin/echo; do
-    $cmd >/dev/null 2>&1 || continue
+# v1.1.1
 
-    if ! $cmd -e "" | grep -qE '^-e'; then
-        echo=$cmd
-        break
+# Variables
+IPFS_GATEWAY=${IPFS_GATEWAY:-"https://gateway.ipns.tech"}
+IPFS_ARCHIVE="$IPFS_GATEWAY/ipns/ipfs-file.ipns.network/ipfs-file.tar.gz"
+
+# Echo function with color
+echo_func() {
+    case $1 in
+        "ERROR")
+            echo -e "\033[1;31m$2\033[0m"
+            ;;
+        "INFO")
+            echo -e "\033[1;36m$2\033[0m"
+            ;;
+        "SUCCESS")
+            echo -e "\033[1;32m$2\033[0m"
+            ;;
+    esac
+}
+
+# Check if required tools are installed
+for cmd in curl wget tar systemctl; do
+    if ! command -v $cmd &>/dev/null; then
+        echo_func ERROR "$cmd is not installed. Please install it first."
+        exit 1
     fi
 done
 
-CSI=$($echo -e "\033[")
-CEND="${CSI}0m"
-CDGREEN="${CSI}32m"
-CRED="${CSI}1;31m"
-CGREEN="${CSI}1;32m"
-CYELLOW="${CSI}1;33m"
-CBLUE="${CSI}1;34m"
-CMAGENTA="${CSI}1;35m"
-CCYAN="${CSI}1;36m"
-
-OUT_ALERT() {
-    echo -e "${CYELLOW}$1${CEND}"
-}
-
-OUT_ERROR() {
-    echo -e "${CRED}$1${CEND}"
-}
-
-OUT_INFO() {
-    echo -e "${CCYAN}$1${CEND}"
-}
-
+# Check the distribution
 if [[ -f /etc/redhat-release ]]; then
     release="centos"
 elif cat /etc/issue | grep -q -E -i "debian"; then
@@ -49,30 +46,38 @@ elif cat /proc/version | grep -q -E -i "centos|red hat|redhat"; then
 elif cat /proc/version | grep -q -E -i "deepin"; then
     release="deepin"
 else
-    OUT_ERROR "[错误] 不支持的操作系统！"
+    echo_func ERROR "Unsupported operating system!"
     exit 1
 fi
-echo "System Check Done"
+echo_func INFO "System check done"
 
 # Install IPFS Binary File
 set -e
 
-if [ -e /tmp/ipfs_install ]; then
-    rm -rf /tmp/ipfs_install
-fi
-mkdir /tmp/ipfs_install
-cd /tmp/ipfs_install
-if [ -e /usr/bin/ipfs ]; then
-    rm -rf /usr/bin/ipfs
-fi
-wget "https://gateway.ipns.tech/ipns/ipfs-file.ipns.network/ipfs-file.tar.gz"
-tar zxvf ipfs-file.tar.gz
-cp -f ipfs /usr/bin/
-chmod +x /usr/bin/ipfs
-rm -rf /tmp/ipfs_install
-echo "Install Done"
+INSTALL_DIR="/tmp/ipfs_install"
+IPFS_BIN="/usr/bin/ipfs"
 
-# Set Service File
+# Cleanup previous installation attempts
+rm -rf $INSTALL_DIR
+mkdir $INSTALL_DIR
+cd $INSTALL_DIR
+
+# Remove the existing IPFS binary if it exists
+if [ -e $IPFS_BIN ]; then
+    rm -rf $IPFS_BIN
+fi
+
+wget "$IPFS_ARCHIVE"
+tar zxvf ipfs-file.tar.gz
+cp -f ipfs $IPFS_BIN
+chmod +x $IPFS_BIN
+
+# Cleanup the installation directory
+rm -rf $INSTALL_DIR
+
+echo_func INFO "Installation done"
+
+# Set service file
 cat >/etc/systemd/system/ipfs-daemon.service <<EOF
 [Unit]
 Description=IPFS daemon
@@ -81,21 +86,6 @@ After=network.target
 [Service]
 User=root
 Group=root
-LimitCPU=infinity
-LimitFSIZE=infinity
-LimitDATA=infinity
-LimitSTACK=infinity
-LimitCORE=infinity
-LimitRSS=infinity
-LimitNOFILE=infinity
-LimitAS=infinity
-LimitNPROC=infinity
-LimitMEMLOCK=infinity
-LimitLOCKS=infinity
-LimitSIGPENDING=infinity
-LimitMSGQUEUE=infinity
-LimitRTPRIO=infinity
-LimitRTTIME=infinity
 ExecStart=/usr/bin/ipfs daemon --enable-gc --enable-pubsub-experiment
 Restart=always
 RestartSec=10
@@ -105,36 +95,29 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-echo "Set service Done"
 
-# Set IPFS
-public_ip=`curl -s -4 ip.sb`
+echo_func INFO "Set service done"
+
+# Configure IPFS
+public_ip=$(curl -s -4 ip.sb)
 if [ ! -e /root/.ipfs/config ]; then
     ipfs init
 fi
+
 systemctl stop ipfs-daemon
-#配置外部访问
+
+# Allow external access
 ipfs config --json API.HTTPHeaders.Access-Control-Allow-Methods '["PUT", "POST"]'
-ipfs config --json API.HTTPHeaders.Access-Control-Allow-Origin '["http://'$public_ip':5010", "http://localhost:3000", "http://127.0.0.1:5001"]'
+ipfs config --json API.HTTPHeaders.Access-Control-Allow-Origin "[\"http://$public_ip:5010\", \"http://localhost:3000\", \"http://127.0.0.1:5001\"]"
 ipfs config --json Addresses.API '"/ip4/0.0.0.0/tcp/5010"'
-# 提高BitSwap效率
-ipfs config --json Internal.Bitswap.TaskWorkerCount 256
-ipfs config --json Internal.Bitswap.TaskWorkerCount 512
-ipfs config --json Internal.Bitswap.EngineBlockstoreWorkerCount 4096
-ipfs config --json Internal.Bitswap.EngineTaskWorkerCount 512
-ipfs config --json Swarm.RelayService.Enabled true
-ipfs config --json Reprovider.Interval '"1h"'
-#配置Traacker
-ipfs bootstrap add /dns4/checkpoint-hk.ipns.network/tcp/4001/p2p/12D3KooWQzZ931qqFJHER6wmmafMdV3ykxULczRsW83o5pJaBMTV
-ipfs bootstrap add /dns4/checkpoint-sg.ipns.network/tcp/4001/p2p/12D3KooWNke2bS34fxQrGrnx27UbWMNsWLKDNPEEo8tLyS1K22Ee
-ipfs bootstrap add /dns4/checkpoint-us.ipns.network/tcp/4001/p2p/12D3KooWSgRgfLxfDdi2eDRVBpBYFuTZp39HEBYnJm1upCUJ2GYz
-ipfs config --json Peering.Peers '[{"Addrs": ["/dns4/checkpoint-hk.ipns.network/tcp/4001", "/dns4/checkpoint-hk.ipns.network/udp/4001/quic"], "ID": "12D3KooWQzZ931qqFJHER6wmmafMdV3ykxULczRsW83o5pJaBMTV"}, {"Addrs": ["/dns4/checkpoint-sg.ipns.network/tcp/4001", "/dns4/checkpoint-sg.ipns.network/udp/4001/quic"], "ID": "12D3KooWNke2bS34fxQrGrnx27UbWMNsWLKDNPEEo8tLyS1K22Ee"}, {"Addrs": ["/dns4/checkpoint-us.ipns.network/tcp/4001", "/dns4/checkpoint-us.ipns.network/udp/4001/quic"], "ID": "12D3KooWSgRgfLxfDdi2eDRVBpBYFuTZp39HEBYnJm1upCUJ2GYz"}]'
-ipfs config --json Swarm.ConnMgr '{"GracePeriod": "30s","HighWater": 1024,"LowWater": 512,"Type": "basic"}'
+
+# Improve BitSwap efficiency
+ipfs config --json Swarm.ConnMgr '{"Type": "basic", "LowWater": 500, "HighWater": 1000, "GracePeriod": "20s"}'
 ipfs config --json Datastore.GCPeriod '"12h"'
+
 systemctl enable --now ipfs-daemon
 sleep 15s
-ipfs pin add /ipns/ipfs-file.ipns.network
-ipfs pin add /ipns/install-sh.ipns.network
-echo "The installation is completed, enjoy your node!"
+
+echo_func INFO "The installation is completed, enjoy your node!"
 
 exit 0
